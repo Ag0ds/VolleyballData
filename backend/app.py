@@ -74,7 +74,7 @@ def require_auth(fn):
 
 def create_app():
     app = Flask(__name__)
-    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False)
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False) #Lembrar de trocar 
 
     @app.before_request
     def build_supabase_clients():
