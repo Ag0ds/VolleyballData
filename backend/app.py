@@ -255,7 +255,8 @@ def create_app():
             "meta": body.get("meta") or {},
             "created_by": g.user_id
         }
-
+        if "set_no" in body and body["set_no"] is not None:
+            payload["set_no"] = int(body["set_no"])
         try:
             res = g.sb.table("events").insert(payload).execute()
             return jsonify(res.data[0]), 201
@@ -380,6 +381,26 @@ def create_app():
             return jsonify({"ok": True}), 200
         except APIError as e:
             return jsonify({"error": e.message, "code": e.code}), 400
+        
+    @app.get("/sessions/<session_id>/score")
+    @require_auth
+    def get_session_score(session_id):
+        try:
+            res = g.sb.rpc("session_score", {"p_session_id": session_id}).execute()
+            return jsonify(res.data), 200
+        except APIError as e:
+            status = 403 if e.code == "42501" else 400
+            return jsonify({"error": e.message, "code": e.code}), status
+
+    @app.get("/sessions/<session_id>/boxscore")
+    @require_auth
+    def get_session_boxscore(session_id):
+        try:
+            res = g.sb.rpc("player_boxscore", {"p_session_id": session_id}).execute()
+            return jsonify(res.data), 200
+        except APIError as e:
+            status = 403 if e.code == "42501" else 400
+            return jsonify({"error": e.message, "code": e.code}), status
 
     return app
 
