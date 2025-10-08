@@ -5,6 +5,7 @@ from supabase import create_client
 from dotenv import load_dotenv
 import jwt
 from postgrest.exceptions import APIError
+from flask_cors import CORS
 
 load_dotenv()
 
@@ -73,6 +74,7 @@ def require_auth(fn):
 
 def create_app():
     app = Flask(__name__)
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False)
 
     @app.before_request
     def build_supabase_clients():
