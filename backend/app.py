@@ -401,6 +401,31 @@ def create_app():
         except APIError as e:
             status = 403 if e.code == "42501" else 400
             return jsonify({"error": e.message, "code": e.code}), status
+        
+    @app.get("/sessions/<session_id>/heatmap")
+    @require_auth
+    def session_heatmap(session_id):
+        kind = request.args.get("kind")
+        key  = request.args.get("key")
+        bins = int(request.args.get("bins", 10))
+
+        if kind not in {"attack","serve","receive","set","dig","block"}:
+            return jsonify({"error":"invalid kind"}), 400
+        if not key:
+            return jsonify({"error":"key is required"}), 400
+        bins = max(2, min(bins, 50))
+
+        try:
+            res = g.sb.rpc("session_heatmap", {
+                "p_session_id": session_id,
+                "p_kind": kind,
+                "p_key": key,
+                "p_bins": bins
+            }).execute()
+            return jsonify(res.data), 200
+        except APIError as e:
+            status = 403 if e.code == "42501" else 400
+            return jsonify({"error": e.message, "code": e.code}), status
 
     return app
 
