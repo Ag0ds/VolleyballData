@@ -1,12 +1,14 @@
+# Arquivos de segredo - NUNCA ENVIE PARA O GITHUB
 .env
 .flaskenv
 instance/
 
+# Backend (Python/Flask)
 venv/
 *.pyc
 __pycache__/
 
-
+# Frontend (Node.js - React, Vue, Angular, etc.)
 node_modules/
 dist/
 build/
@@ -17,6 +19,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Arquivos de IDEs
 .vscode/
 .idea/
 
