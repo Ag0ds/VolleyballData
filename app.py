@@ -81,11 +81,9 @@ def create_app():
             g.sb.postgrest.session.headers.pop("Authorization", None)
         except Exception:
             pass
-
         token = extract_bearer(request.headers.get("Authorization"))
         if token:
             g.sb.postgrest.auth(token)
-
         g.sb_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
     @app.post("/auth/signup")
@@ -176,14 +174,18 @@ def create_app():
         if not user_id:
             return jsonify({"error": "user_id is required"}), 400
 
-        ins = g.sb.table("team_members").insert({
-            "team_id": team_id,
-            "user_id": user_id,
-            "role": role
-        }).execute()
-        if getattr(ins, "error", None):
-            return jsonify({"error": ins.error.message}), 400
-        return jsonify({"ok": True, "inserted": ins.data}), 201
+        if not _is_team_staff_or_creator(team_id):
+            return jsonify({"error": "forbidden"}), 403
+
+        try:
+            ins = g.sb_admin.table("team_members").insert({
+                "team_id": team_id,
+                "user_id": user_id,
+                "role": role
+            }).execute()
+            return jsonify(ins.data[0] if ins.data else {"ok": True}), 201
+        except APIError as e:
+            return jsonify({"error": e.message, "code": e.code}), 400
     
     @app.post("/sessions")
     @require_auth
@@ -287,6 +289,97 @@ def create_app():
         if getattr(res, "error", None):
             return jsonify({"error": res.error.message}), 400
         return jsonify(res.data), 200
+    
+    @app.post("/players")
+    @require_auth
+    def create_player():
+        body = request.get_json(force=True)
+        team_id = body.get("team_id")
+        name = body.get("name")
+        if not team_id or not name:
+            return jsonify({"error": "team_id and name are required"}), 400
+
+        payload = {
+            "team_id": team_id,
+            "name": name,
+            "created_by": g.user_id,
+        }
+        for opt in ("number", "position", "height_cm", "dominant_hand"):
+            if opt in body and body[opt] is not None:
+                payload[opt] = body[opt]
+        try:
+            res = g.sb.table("players").insert(payload).execute()
+            return jsonify(res.data[0]), 201
+        except APIError as e:
+            status = 403 if e.code == "42501" else 400
+            return jsonify({"error": e.message, "code": e.code}), status
+
+    @app.get("/players")
+    @require_auth
+    def list_players():
+        team_id = request.args.get("team_id")
+        if not team_id:
+            return jsonify({"error": "team_id is required"}), 400
+        try:
+            q = g.sb.table("players").select("*").eq("team_id", team_id).order("number", desc=False).execute()
+            return jsonify(q.data), 200
+        except APIError as e:
+            status = 403 if e.code == "42501" else 400
+            return jsonify({"error": e.message, "code": e.code}), status
+
+    @app.patch("/players/<player_id>")
+    @require_auth
+    def update_player(player_id):
+        body = request.get_json(force=True)
+        allowed = {"name", "number", "position", "height_cm", "dominant_hand"}
+        updates = {k: v for k, v in body.items() if k in allowed}
+        if not updates:
+            return jsonify({"error": "no valid fields to update"}), 400
+        try:
+            g.sb.table("players").update(updates).eq("id", player_id).execute()
+            sel = g.sb.table("players").select("*").eq("id", player_id).single().execute()
+            return jsonify(sel.data), 200
+        except APIError as e:
+            status = 403 if e.code == "42501" else 400
+            return jsonify({"error": e.message, "code": e.code}), status
+
+    @app.delete("/players/<player_id>")
+    @require_auth
+    def delete_player(player_id):
+        try:
+            g.sb.table("players").delete().eq("id", player_id).execute()
+            return jsonify({"ok": True}), 200
+        except APIError as e:
+            status = 403 if e.code == "42501" else 400
+            return jsonify({"error": e.message, "code": e.code}), status
+        
+    def _is_team_staff_or_creator(team_id: str) -> bool:
+        m = g.sb.table("team_members").select("role").eq("team_id", team_id).eq("user_id", g.user_id).maybe_single().execute()
+        role = (m.data or {}).get("role") if isinstance(m.data, dict) else None
+        if role in ("owner", "coach"):
+            return True
+        t = g.sb.table("teams").select("created_by").eq("id", team_id).single().execute()
+        return (t.data or {}).get("created_by") == g.user_id
+
+    @app.get("/teams/<team_id>/members")
+    @require_auth
+    def list_members(team_id):
+        if not _is_team_staff_or_creator(team_id):
+            return jsonify({"error": "forbidden"}), 403
+        q = g.sb_admin.table("team_members").select("user_id, role, team_id").eq("team_id", team_id).order("role", desc=False).execute()
+        return jsonify(q.data), 200
+
+
+    @app.delete("/teams/<team_id>/members/<member_user_id>")
+    @require_auth
+    def remove_member(team_id, member_user_id):
+        if not _is_team_staff_or_creator(team_id):
+            return jsonify({"error": "forbidden"}), 403
+        try:
+            g.sb_admin.table("team_members").delete().eq("team_id", team_id).eq("user_id", member_user_id).execute()
+            return jsonify({"ok": True}), 200
+        except APIError as e:
+            return jsonify({"error": e.message, "code": e.code}), 400
 
     return app
 
