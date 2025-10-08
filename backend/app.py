@@ -384,6 +384,12 @@ def create_app():
         except APIError as e:
             return jsonify({"error": e.message, "code": e.code}), 400
         
+    @app.delete("/events/<event_id>")
+    @require_auth
+    def delete_event(event_id):
+        res = g.sb.table("events").delete().eq("id", event_id).execute()
+        return jsonify({"ok": True}), 200
+        
     @app.get("/sessions/<session_id>/score")
     @require_auth
     def get_session_score(session_id):
